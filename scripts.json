@@ -2,11 +2,10 @@
   "scripts": [
     {
       "id": "br-trade-viewer",
-      "name": "Black Russia TradeID Viewer",
-      "description": "Идеально адаптивный скрипт с элегантным полупрозрачным дизайном.",
-      "url": "https://3ejlehka123.github.io/br-scripts/br-trade-viewer.js",
-      "matches": ["https://logs.blackrussia.online/gslogs/*"],
-      "enabledByDefault": true
+      "name": "BR Trade Viewer",
+      "matches": ["<all_urls>"],
+      "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/br-trade-viewer.js",
+      "enabledDefault": true
     }
   ]
 }
