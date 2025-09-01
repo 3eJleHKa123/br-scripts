@@ -1,11 +1,15 @@
 (function () {
   'use strict';
+
   const REQUEST_DELAY_MS = 4000;
   const SHOW_CONNECT_BTN_DELAY_MS = 2000;
   let lastRequestTime = 0;
   const openModals = {};
   const SERVER_ID_MATCH = window.location.pathname.match(/\/gslogs\/(\d+)/);
   const SERVER_ID = SERVER_ID_MATCH ? SERVER_ID_MATCH[1] : '1';
+
+  // --- ЗАМЕНА GM_addStyle ---
+  // Вместо GM_addStyle(cssString)
   const css = `:root {
     --bg-main: rgba(26, 26, 26, 0.7);
     --bg-panel: rgba(30, 39, 46, 0.7);
@@ -246,10 +250,13 @@
   style.type = 'text/css';
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
+  // --- КОНЕЦ ЗАМЕНЫ GM_addStyle ---
+
   function formatTime(iso) {
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}| ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
   }
+
   async function globalThrottle() {
     const now = Date.now();
     const timeSinceLastRequest = now - lastRequestTime;
@@ -261,6 +268,7 @@
     }
     lastRequestTime = Date.now();
   }
+
   function showWaitMessage(delayMs) {
     Object.values(openModals).forEach(modal => {
       const content = modal.querySelector('.trade-modal-content-resp');
@@ -275,6 +283,7 @@
       }
     });
   }
+
   function hideWaitMessage() {
     Object.values(openModals).forEach(modal => {
       const waitMsg = modal.querySelector('.request-waiting-resp');
@@ -282,77 +291,78 @@
         waitMsg.remove();
     });
   }
+
+  // --- ЗАМЕНА GM_xmlhttpRequest ---
+  // Вместо GM_xmlhttpRequest({...})
   async function loadConnectData(nick, tradeTime) {
     await globalThrottle();
+
     const tradeDate = new Date(tradeTime);
     const startDate = new Date(tradeDate.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const endDate = new Date(tradeDate.getTime() + 24 * 60 * 60 * 1000).toISOString();
     const url = `https://logs.blackrussia.online/gslogs/${SERVER_ID}/api/list-game-logs/?category_id__exact=38&player_name__exact=${encodeURIComponent(nick)}&time__gte=${startDate}&time__lte=${endDate}&order_by=time&offset=0&auto=false`;
+
+    // Используем fetch
     return new Promise((resolve) => {
-      fetch(url).then(response => {
-        if (response.status !== 200) {
-          console.error(`[BR-Viewer] API Error: ${response.status} for ${url}`);
-          return resolve({
-            nick,
-            appmdid: null,
-            level: null,
-            playerIp: null
-          });
-        }
-        return response.json();
-      }).then(data => {
-        if (!Array.isArray(data) || data.length === 0) {
-          return resolve({
-            nick,
-            appmdid: null,
-            level: null,
-            playerIp: null
-          });
-        }
-        let appmdid = null, level = null, playerIp = null;
-        let closestConnectTime = null, closestDisconnectTime = null;
-        for (const item of data) {
-          const itemTime = new Date(item.time).getTime();
-          if (/подключился/i.test(item.transaction_desc)) {
-            if (itemTime <= tradeDate.getTime() && (!closestConnectTime || itemTime > closestConnectTime)) {
-              const match = item.transaction_desc.match(/APPMDID:\s*([A-Za-z0-9_-]+)/i);
-              if (match) {
-                appmdid = match[1];
-                playerIp = item.player_ip;
-                closestConnectTime = itemTime;
-              }
-            }
-          }
-          if (/отключился/i.test(item.transaction_desc)) {
-            const timeDiff = Math.abs(itemTime - tradeDate.getTime());
-            if (!closestDisconnectTime || timeDiff < Math.abs(closestDisconnectTime - tradeDate.getTime())) {
-              const levelMatch = item.transaction_desc.match(/Уровень:\s*(\d+)/i);
-              if (levelMatch) {
-                level = levelMatch[1];
-                if (!playerIp)
-                  playerIp = item.player_ip;
-                closestDisconnectTime = itemTime;
-              }
-            }
-          }
-        }
-        resolve({
-          nick,
-          appmdid,
-          level,
-          playerIp
-        });
-      }).catch(error => {
-        console.error('[BR-Viewer] Network error loading connection logs for ' + nick, error);
-        resolve({
-          nick,
-          appmdid: null,
-          level: null,
-          playerIp: null
-        });
-      });
+        fetch(url)
+            .then(response => {
+                // Проверяем статус ответа
+                if (!response.ok) {
+                    console.error(`[BR-Viewer] API Error: ${response.status} for ${url}`);
+                    // Разрешаем промис с пустыми данными в случае ошибки HTTP
+                    return resolve({ nick, appmdid: null, level: null, playerIp: null });
+                }
+                // Парсим JSON
+                return response.json();
+            })
+            .then(data => {
+                // Обрабатываем полученные данные
+                if (!Array.isArray(data) || data.length === 0) {
+                    return resolve({ nick, appmdid: null, level: null, playerIp: null });
+                }
+
+                let appmdid = null, level = null, playerIp = null;
+                let closestConnectTime = null, closestDisconnectTime = null;
+
+                for (const item of data) {
+                    const itemTime = new Date(item.time).getTime();
+
+                    if (/подключился/i.test(item.transaction_desc)) {
+                        if (itemTime <= tradeDate.getTime() && (!closestConnectTime || itemTime > closestConnectTime)) {
+                            const match = item.transaction_desc.match(/APPMDID:\s*([A-Za-z0-9_-]+)/i);
+                            if (match) {
+                                appmdid = match[1];
+                                playerIp = item.player_ip;
+                                closestConnectTime = itemTime;
+                            }
+                        }
+                    }
+
+                    if (/отключился/i.test(item.transaction_desc)) {
+                        const timeDiff = Math.abs(itemTime - tradeDate.getTime());
+                        if (!closestDisconnectTime || timeDiff < Math.abs(closestDisconnectTime - tradeDate.getTime())) {
+                            const levelMatch = item.transaction_desc.match(/Уровень:\s*(\d+)/i);
+                            if (levelMatch) {
+                                level = levelMatch[1];
+                                if (!playerIp) playerIp = item.player_ip;
+                                closestDisconnectTime = itemTime;
+                            }
+                        }
+                    }
+                }
+
+                resolve({ nick, appmdid, level, playerIp });
+            })
+            .catch(error => {
+                // Ловим сетевые ошибки и ошибки парсинга
+                console.error('[BR-Viewer] Network error loading connection logs for ' + nick, error);
+                // Разрешаем промис с пустыми данными в случае сетевой ошибки
+                resolve({ nick, appmdid: null, level: null, playerIp: null });
+            });
     });
   }
+  // --- КОНЕЦ ЗАМЕНЫ GM_xmlhttpRequest ---
+
   function createConnectPanel(playerData, wrapper) {
     // Remove loading indicators
     wrapper.querySelectorAll('.connect-panel-resp').forEach(el => el.remove());
@@ -400,6 +410,7 @@
       wrapper.appendChild(panel);
     }
   }
+
   function createModal(tradeID) {
     if (openModals[tradeID])
       return;
@@ -493,69 +504,79 @@
       const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       const now = new Date().toISOString();
       const url = `https://logs.blackrussia.online/gslogs/${SERVER_ID}/api/list-game-logs/?transaction_desc__ilike=%25TradeID%3A+${tradeID}%25&time__gte=${fiveDaysAgo}&time__lte=${now}&order_by=time&offset=0&auto=false`;
-      fetch(url).then(response => {
-        if (response.status !== 200) {
-          content.innerHTML = '<div class="error-resp">Ошибка загрузки: ' + response.status + '</div>';
-          return;
-        }
-        return response.json();
-      }).then(data => {
-        content.innerHTML = '';
-        if (!Array.isArray(data) || data.length === 0) {
-          content.innerHTML = '<div class="loading-resp">Логи трейда не найдены.</div>';
-          return;
-        }
-        const tradeTime = data[0].time;
-        data.forEach(item => {
-          const row = document.createElement("div");
-          row.className = "trade-row-resp";
-          row.innerHTML = `
-        <div class="trade-player-info">
-            <span class="trade-player-resp">${item.player_name}</span>
-            <span class="trade-time-resp">${formatTime(item.time)}</span>
-        </div>
-        <div class="trade-desc-resp">${item.transaction_desc}</div>`;
-          content.appendChild(row);
+      
+      // Используем fetch
+      fetch(url)
+        .then(response => {
+            // Проверяем статус ответа
+            if (!response.ok) {
+                content.innerHTML = '<div class="error-resp">Ошибка загрузки: ' + response.status + '</div>';
+                return; // Выходим из цепочки .then
+            }
+            // Парсим JSON
+            return response.json();
+        })
+        .then(data => {
+            // Обрабатываем полученные данные
+            content.innerHTML = '';
+            if (!Array.isArray(data) || data.length === 0) {
+                content.innerHTML = '<div class="loading-resp">Логи трейда не найдены.</div>';
+                return;
+            }
+            const tradeTime = data[0].time;
+            data.forEach(item => {
+                const row = document.createElement("div");
+                row.className = "trade-row-resp";
+                row.innerHTML = `
+            <div class="trade-player-info">
+                <span class="trade-player-resp">${item.player_name}</span>
+                <span class="trade-time-resp">${formatTime(item.time)}</span>
+            </div>
+            <div class="trade-desc-resp">${item.transaction_desc}</div>`;
+                content.appendChild(row);
+            });
+            const uniquePlayers = [...new Set(data.map(i => i.player_name))].slice(0, 2);
+            if (uniquePlayers.length === 2) {
+                footer.innerHTML = `<span style="color:var(--text-secondary); font-size:12px; font-style:italic;">Кнопка загрузки данных появится через ${SHOW_CONNECT_BTN_DELAY_MS / 1000} с перед запросом...</span>`;
+                setTimeout(async () => {
+                    footer.innerHTML = '';
+                    const connectBtn = document.createElement('button');
+                    connectBtn.className = 'both-nicks-btn-resp';
+                    connectBtn.textContent = 'Загрузить данные игроков';
+                    footer.appendChild(connectBtn);
+                    connectBtn.onclick = async () => {
+                        connectBtn.disabled = true;
+                        connectBtn.textContent = 'Загрузка...';
+                        try {
+                            const results = await Promise.allSettled([
+                                loadConnectData(uniquePlayers[0], tradeTime),
+                                loadConnectData(uniquePlayers[1], tradeTime)
+                            ]);
+                            const playerData = results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
+                            createConnectPanel(playerData, wrapper);
+                            connectBtn.remove();
+                        } catch (error) {
+                            console.error('[BR-Viewer] Error loading connection ', error);
+                            connectBtn.textContent = "Ошибка загрузки";
+                            setTimeout(() => {
+                                connectBtn.disabled = false;
+                                connectBtn.textContent = `Повторить загрузку`;
+                            }, 3000);
+                        }
+                    };
+                }, SHOW_CONNECT_BTN_DELAY_MS);
+            } else {
+                footer.innerHTML = `<span style="color:#777; font-size:12px;">Участники трейда не определены (${uniquePlayers.length} найдено).</span>`;
+            }
+        })
+        .catch(err => {
+            // Ловим сетевые ошибки и ошибки парсинга
+            content.innerHTML = '<div class="error-resp">Ошибка соединения.</div>';
+            console.error("[BR-Viewer] Network error loading trade logs #" + tradeID, err);
         });
-        const uniquePlayers = [...new Set(data.map(i => i.player_name))].slice(0, 2);
-        if (uniquePlayers.length === 2) {
-          footer.innerHTML = `<span style="color:var(--text-secondary); font-size:12px; font-style:italic;">Кнопка загрузки данных появится через ${SHOW_CONNECT_BTN_DELAY_MS / 1000} с перед запросом...</span>`;
-          setTimeout(async () => {
-            footer.innerHTML = '';
-            const connectBtn = document.createElement('button');
-            connectBtn.className = 'both-nicks-btn-resp';
-            connectBtn.textContent = 'Загрузить данные игроков';
-            footer.appendChild(connectBtn);
-            connectBtn.onclick = async () => {
-              connectBtn.disabled = true;
-              connectBtn.textContent = 'Загрузка...';
-              try {
-                const results = await Promise.allSettled([
-                  loadConnectData(uniquePlayers[0], tradeTime),
-                  loadConnectData(uniquePlayers[1], tradeTime)
-                ]);
-                const playerData = results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
-                createConnectPanel(playerData, wrapper);
-                connectBtn.remove();
-              } catch (error) {
-                console.error('[BR-Viewer] Error loading connection data:', error);
-                connectBtn.textContent = "Ошибка загрузки";
-                setTimeout(() => {
-                  connectBtn.disabled = false;
-                  connectBtn.textContent = `Повторить загрузку`;
-                }, 3000);
-              }
-            };
-          }, SHOW_CONNECT_BTN_DELAY_MS);
-        } else {
-          footer.innerHTML = `<span style="color:#777; font-size:12px;">Участники трейда не определены (${uniquePlayers.length} найдено).</span>`;
-        }
-      }).catch(err => {
-        content.innerHTML = '<div class="error-resp">Ошибка соединения.</div>';
-        console.error("[BR-Viewer] Network error loading trade logs #" + tradeID, err);
-      });
     })();
   }
+
   function attachTradeButtons() {
     const tradeRegex = /TradeID:\s*(\d+)/g;
     document.querySelectorAll('td:not([class*="-resp"])').forEach(cell => {
