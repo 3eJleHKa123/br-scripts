@@ -3,7 +3,7 @@
     {
       "id": "br-trade-viewer",
       "name": "BR Trade Viewer",
-      "matches": ["<all_urls>"],
+      "matches": ["https://logs.blackrussia.online/gslogs/*"],
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/br-trade-viewer.js",
       "enabledDefault": true
     }
