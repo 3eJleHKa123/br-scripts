@@ -6,7 +6,7 @@
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/br-trade-viewer.js",
       "enabledDefault": true
-    }
+    },
     {
   "id": "set-tstart",
   "name": "Set 6-Months Start Date",
