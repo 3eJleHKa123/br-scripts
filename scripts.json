@@ -19,7 +19,7 @@
       "name": "Forum Quick Buttons",
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/refs/heads/main/forum-buttons.js",
       "matches": [
-        "https://forum.blackrussia.online/threads/"
+        "https://forum.blackrussia.online/threads/*"
       ],
       "enabledDefault": true
     }
