@@ -9,7 +9,7 @@
     },
     {
       "id": "set-tstart",
-      "name": "Set 6-Months Start Date",
+      "name": "Ban Info",
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/baninfo.js",
       "enabledDefault": true
