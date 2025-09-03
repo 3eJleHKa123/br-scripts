@@ -1,7 +1,7 @@
 {
   "scripts": [
     {
-      "id": "br-trade-viewer",
+      "id": "Содержимое трейда",
       "name": "BR Trade Viewer",
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/br-trade-viewer.js",
@@ -9,14 +9,14 @@
     },
     {
       "id": "set-tstart",
-      "name": "Ban Info",
+      "name": "Последняя блокировка/разблокировка",
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/baninfo.js",
       "enabledDefault": true
     },
     {
       "id": "forumbtns",
-      "name": "Forum Quick Buttons",
+      "name": "Форумный скрипт(в разработке)",
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/refs/heads/main/forum-buttons.js",
       "matches": [
         "https://forum.blackrussia.online/threads/*"
