@@ -13,15 +13,15 @@
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
       "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/baninfo.js",
       "enabledDefault": true
-    }
+    },
     {
-  "id": "forumbtns",
-  "name": "Forum Quick Buttons",
-  "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/refs/heads/main/forum-buttons.js",
-  "matches": [
-    "https://forum.blackrussia.online/*"
-  ],
-  "enabledDefault": true
-}
+      "id": "forumbtns",
+      "name": "Forum Quick Buttons",
+      "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/refs/heads/main/forum-buttons.js",
+      "matches": [
+        "^https://forum\\.blackrussia\\.online/threads/.*"
+      ],
+      "enabledDefault": true
+    }
   ]
 }
