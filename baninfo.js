@@ -1,34 +1,14 @@
-// background.js или отдельный файл, подключаемый как content script
-
+// baninfo.js (или другой файл, который будет подключаться как content script)
 (function () {
     'use strict';
 
-    // Проверяем, соответствует ли URL странице логов
-    if (!window.location.href.startsWith('https://logs.blackrussia.online/gslogs/')) {
-        return;
-    }
+    // --- Настройки ---
+    const PERIOD_DAYS = 179;
+    const REQUEST_DELAY_MS = 1200;
+    let lastRequestTime = 0;
 
-    // -------------------
-    // Добавление стилей
-    // -------------------
-    function addStyle(css) {
-        const style = document.createElement('style');
-        style.type = 'text/css';
-        style.textContent = css;
-        
-        // Добавляем стиль в <head>
-        const head = document.head || document.getElementsByTagName('head')[0];
-        if (head) {
-            head.appendChild(style);
-        } else {
-            // Если head еще не готов, ждем
-            document.addEventListener('DOMContentLoaded', () => {
-                (document.head || document.getElementsByTagName('head')[0]).appendChild(style);
-            });
-        }
-    }
-
-    addStyle(`
+    // --- Стили ---
+    const styles = `
         #log-filter-section {
             width: 320px !important;
             max-width: 320px !important;
@@ -113,61 +93,16 @@
         .ban-info-loading-v41 {
             color: #1976d2;
         }
-    `);
+    `;
 
-    // -------------------
-    // Конфигурация
-    // -------------------
-    const PERIOD_DAYS = 179;
-    const REQUEST_DELAY_MS = 1200;
-    let lastRequestTime = 0;
-
-    // Определяем SERVER_ID из URL
-    const pathParts = location.pathname.split('/').filter(p => p);
-    const gslogsIndex = pathParts.indexOf('gslogs');
-    const serverId = (gslogsIndex !== -1 && pathParts[gslogsIndex + 1] && !isNaN(pathParts[gslogsIndex + 1])) ? pathParts[gslogsIndex + 1] : null;
-
-    if (!serverId) {
-        console.error('[Ban Checker Extension] Could not determine server ID from URL');
-        return;
-    }
-    const API_BASE_URL = `${location.origin}/gslogs/${serverId}/api/list-game-logs/`;
-
-    // -------------------
-    // Замена GM_xmlhttpRequest на fetch
-    // -------------------
-    async function makeApiRequest(url) {
-        try {
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                },
-                // В расширении credentials может не понадобиться, 
-                // но если API требует сессию, можно попробовать 'include'
-                // credentials: 'include' 
-                // Для простоты начнем без него
-            });
-
-            if (!response.ok) {
-                // Обработка ошибок HTTP
-                if (response.status === 429) {
-                    throw new Error('TOO_MANY_REQUESTS');
-                }
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('[Ban Checker Extension] API request failed:', error);
-            throw error; // Пробрасываем ошибку дальше
-        }
+    // --- Функции-утилиты ---
+    function addStyle(css) {
+        const style = document.createElement('style');
+        style.type = 'text/css';
+        style.textContent = css;
+        (document.head || document.getElementsByTagName('head')[0]).appendChild(style);
     }
 
-    // -------------------
-    // Вспомогательные функции
-    // -------------------
     function showResult(message, type = 'info', resultBoxElement) {
         if (!resultBoxElement) return;
         resultBoxElement.textContent = '';
@@ -236,9 +171,32 @@
         }
     }
 
-    // -------------------
-    // Основная логика API
-    // -------------------
+    // --- Логика API ---
+    async function makeApiRequest(url) {
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                // credentials: 'include' // Может понадобиться, если API требует авторизацию
+            });
+
+            if (!response.ok) {
+                if (response.status === 429) {
+                    throw new Error('TOO_MANY_REQUESTS');
+                }
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            // console.error('[Ban Checker Extension] API request failed:', error); // Убрал лог
+            throw error;
+        }
+    }
+
     async function getPlayerBlocks(playerName, resultBoxElement) {
         await throttle();
         lastRequestTime = Date.now();
@@ -265,10 +223,18 @@
         });
 
         let paramsString = params.toString();
-        // Исправляем кодирование времени
         paramsString = paramsString.replace(/time__gte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
         paramsString = paramsString.replace(/time__lte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
 
+        // Определяем SERVER_ID из URL
+        const pathParts = location.pathname.split('/').filter(p => p);
+        const gslogsIndex = pathParts.indexOf('gslogs');
+        const serverId = (gslogsIndex !== -1 && pathParts[gslogsIndex + 1] && !isNaN(pathParts[gslogsIndex + 1])) ? pathParts[gslogsIndex + 1] : null;
+
+        if (!serverId) {
+            throw new Error('Не удалось определить ID сервера из URL');
+        }
+        const API_BASE_URL = `${location.origin}/gslogs/${serverId}/api/list-game-logs/`;
         const url = `${API_BASE_URL}?${paramsString}`;
 
         try {
@@ -287,17 +253,13 @@
             if (error.message === 'TOO_MANY_REQUESTS') {
                 showResult('Слишком частые запросы. Повтор через 5 секунд...', 'loading', resultBoxElement);
                 await wait(5000);
-                // Рекурсивный повторный вызов
                 return await getPlayerBlocks(playerName, resultBoxElement);
             }
-            // Пробрасываем другие ошибки
             throw error;
         }
     }
 
-    // -------------------
-    // Обработчик клика
-    // -------------------
+    // --- Основная логика ---
     async function handleInfoButtonClick(event) {
         event.preventDefault();
         event.stopPropagation();
@@ -305,7 +267,6 @@
         const playerNameInput = document.querySelector('#playerNameInput');
         let playerName = playerNameInput ? playerNameInput.value.trim() : '';
 
-        // Если имя не найдено в поле ввода, пробуем получить из URL
         if (!playerName) {
             const urlParams = new URLSearchParams(window.location.search);
             playerName = urlParams.get('pname') || '';
@@ -324,7 +285,6 @@
             const logs = await getPlayerBlocks(playerName, resultBox);
 
             if (logs && logs.length > 0) {
-                // Сортируем по убыванию времени, чтобы первая запись была последней
                 const sortedLogs = logs.sort((a, b) => new Date(b.time) - new Date(a.time));
                 const lastBlockLog = sortedLogs[0];
 
@@ -348,8 +308,7 @@
                 showResult(`Блокировки для <b>"${playerName}"</b> не найдены.`, 'not_found', resultBox);
             }
         } catch (error) {
-            console.error('[Ban Checker Extension] Error fetching player info:', error);
-            // Показываем пользователю более дружелюбное сообщение
+            // console.error('[Ban Checker Extension] Error fetching player info:', error); // Убрал лог
             if (error.message && error.message.includes('HTTP')) {
                 showResult(`Ошибка API: ${error.message}`, 'error', resultBox);
             } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -360,18 +319,29 @@
         }
     }
 
-    // -------------------
-    // Создание UI
-    // -------------------
     function createBanCheckerUI() {
+        // Проверяем, на правильной ли странице мы находимся
+        if (!window.location.href.startsWith('https://logs.blackrussia.online/gslogs/')) {
+            return;
+        }
+
         const playerNameInput = document.querySelector('#playerNameInput');
         if (!playerNameInput) {
-            return;
+            return; // Элемент еще не загрузился
         }
 
         // Проверяем, не создана ли кнопка уже
         if (document.getElementById('ban-check-container-v41')) {
             return;
+        }
+
+        // Добавляем стили один раз
+        if (!document.getElementById('ban-check-styles-v41')) {
+            addStyle(styles);
+            const styleMarker = document.createElement('style');
+            styleMarker.id = 'ban-check-styles-v41';
+            styleMarker.textContent = '/* Ban Checker Styles Loaded */';
+            (document.head || document.getElementsByTagName('head')[0]).appendChild(styleMarker);
         }
 
         const container = document.createElement('div');
@@ -381,7 +351,7 @@
         button.id = 'ban-check-btn-v41';
         button.textContent = '🚫';
         button.type = 'button';
-        // Если Bootstrap классы доступны на странице, они могут помочь со стилями
+        // Пробуем применить стили Bootstrap, если они есть
         button.className = 'btn btn-danger';
 
         const resultBox = document.createElement('div');
@@ -391,38 +361,41 @@
         container.appendChild(button);
         container.appendChild(resultBox);
 
-        // Вставляем контейнер ПОСЛЕ поля ввода имени игрока
         playerNameInput.parentNode.insertBefore(container, playerNameInput.nextSibling);
 
-        // Назначаем обработчик события
         button.addEventListener('click', handleInfoButtonClick);
     }
 
-    // -------------------
-    // Инициализация
-    // -------------------
+    // --- Инициализация (как в br-trade-viewer.js) ---
     
-    // Пробуем создать UI сразу, если DOM уже готов
+    // Пробуем создать UI сразу
     if (document.readyState === 'loading') {
-        // DOM еще не готов, ждем
         document.addEventListener('DOMContentLoaded', createBanCheckerUI);
     } else {
-        // DOM уже готов
         createBanCheckerUI();
     }
 
-    // На случай, если элементы подгружаются динамически
-    // Можно использовать MutationObserver или просто таймер
-    const initInterval = setInterval(() => {
-        if (document.querySelector('#playerNameInput')) {
-            createBanCheckerUI();
-            clearInterval(initInterval);
-        }
-    }, 1000);
+    // Наблюдаем за изменениями в DOM для динамически подгружаемых элементов
+    const observer = new MutationObserver(mutations => {
+        mutations.forEach(mutation => {
+            if (mutation.type === 'childList') {
+                // Проверяем, появились ли нужные элементы
+                if (document.querySelector('#playerNameInput') && !document.querySelector('#ban-check-container-v41')) {
+                    setTimeout(createBanCheckerUI, 100); // Небольшая задержка для уверенности
+                }
+            }
+        });
+    });
 
-    // Останавливаем попытки через 10 секунд
-    setTimeout(() => {
-        clearInterval(initInterval);
-    }, 10000);
+    // Начинаем наблюдение
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Останавливаем наблюдение при выгрузке страницы
+    window.addEventListener('beforeunload', () => {
+        observer.disconnect();
+    });
 
 })();
