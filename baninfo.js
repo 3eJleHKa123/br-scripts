@@ -1,13 +1,31 @@
+// background.js или отдельный файл, подключаемый как content script
+
 (function () {
     'use strict';
 
+    // Проверяем, соответствует ли URL странице логов
+    if (!window.location.href.startsWith('https://logs.blackrussia.online/gslogs/')) {
+        return;
+    }
+
     // -------------------
-    // Замена GM_addStyle
+    // Добавление стилей
     // -------------------
     function addStyle(css) {
         const style = document.createElement('style');
+        style.type = 'text/css';
         style.textContent = css;
-        document.head.appendChild(style);
+        
+        // Добавляем стиль в <head>
+        const head = document.head || document.getElementsByTagName('head')[0];
+        if (head) {
+            head.appendChild(style);
+        } else {
+            // Если head еще не готов, ждем
+            document.addEventListener('DOMContentLoaded', () => {
+                (document.head || document.getElementsByTagName('head')[0]).appendChild(style);
+            });
+        }
     }
 
     addStyle(`
@@ -110,33 +128,41 @@
     const serverId = (gslogsIndex !== -1 && pathParts[gslogsIndex + 1] && !isNaN(pathParts[gslogsIndex + 1])) ? pathParts[gslogsIndex + 1] : null;
 
     if (!serverId) {
-        console.error('[Ban Checker] Could not determine server ID from URL');
+        console.error('[Ban Checker Extension] Could not determine server ID from URL');
         return;
     }
     const API_BASE_URL = `${location.origin}/gslogs/${serverId}/api/list-game-logs/`;
 
     // -------------------
-    // Замена GM_xmlhttpRequest
+    // Замена GM_xmlhttpRequest на fetch
     // -------------------
-    function makeRequest(url) {
-        return new Promise((resolve, reject) => {
-            fetch(url, {
+    async function makeApiRequest(url) {
+        try {
+            const response = await fetch(url, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
                 },
-                credentials: 'include' // Важно для сохранения сессии
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                // В расширении credentials может не понадобиться, 
+                // но если API требует сессию, можно попробовать 'include'
+                // credentials: 'include' 
+                // Для простоты начнем без него
+            });
+
+            if (!response.ok) {
+                // Обработка ошибок HTTP
+                if (response.status === 429) {
+                    throw new Error('TOO_MANY_REQUESTS');
                 }
-            })
-            .then(data => resolve(data))
-            .catch(error => reject(error));
-        });
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[Ban Checker Extension] API request failed:', error);
+            throw error; // Пробрасываем ошибку дальше
+        }
     }
 
     // -------------------
@@ -239,35 +265,33 @@
         });
 
         let paramsString = params.toString();
+        // Исправляем кодирование времени
         paramsString = paramsString.replace(/time__gte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
         paramsString = paramsString.replace(/time__lte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
 
         const url = `${API_BASE_URL}?${paramsString}`;
 
-        // console.log('[Ban Checker] Fetching:', url);
-
         try {
-            const response = await makeRequest(url);
-            // console.log('[Ban Checker] API Response:', response.status);
+            const data = await makeApiRequest(url);
             
             let logsArray;
-            if (Array.isArray(response)) {
-                logsArray = response;
-            } else if (response && typeof response === 'object' && Array.isArray(response.results)) {
-                logsArray = response.results;
+            if (Array.isArray(data)) {
+                logsArray = data;
+            } else if (data && typeof data === 'object' && Array.isArray(data.results)) {
+                logsArray = data.results;
             } else {
-                // console.warn('[Ban Checker] Unexpected data format:', response);
-                logsArray = Array.isArray(response) ? response : (response ? [response] : []);
+                logsArray = Array.isArray(data) ? data : (data ? [data] : []);
             }
             return logsArray;
         } catch (error) {
-            // console.error('[Ban Checker] Request error:', error);
-            if (error.message && error.message.includes('429')) {
+            if (error.message === 'TOO_MANY_REQUESTS') {
                 showResult('Слишком частые запросы. Повтор через 5 секунд...', 'loading', resultBoxElement);
                 await wait(5000);
+                // Рекурсивный повторный вызов
                 return await getPlayerBlocks(playerName, resultBoxElement);
             }
-            throw new Error(`Ошибка запроса к API: ${error.message}`);
+            // Пробрасываем другие ошибки
+            throw error;
         }
     }
 
@@ -281,6 +305,7 @@
         const playerNameInput = document.querySelector('#playerNameInput');
         let playerName = playerNameInput ? playerNameInput.value.trim() : '';
 
+        // Если имя не найдено в поле ввода, пробуем получить из URL
         if (!playerName) {
             const urlParams = new URLSearchParams(window.location.search);
             playerName = urlParams.get('pname') || '';
@@ -296,11 +321,10 @@
         showResult('Загрузка информации...', 'loading', resultBox);
 
         try {
-            // console.log(`[Ban Checker] Запрос данных для игрока: ${playerName}`);
             const logs = await getPlayerBlocks(playerName, resultBox);
 
             if (logs && logs.length > 0) {
-                // console.log(`[Ban Checker] Получено ${logs.length} записей (уже отфильтровано API).`);
+                // Сортируем по убыванию времени, чтобы первая запись была последней
                 const sortedLogs = logs.sort((a, b) => new Date(b.time) - new Date(a.time));
                 const lastBlockLog = sortedLogs[0];
 
@@ -324,8 +348,15 @@
                 showResult(`Блокировки для <b>"${playerName}"</b> не найдены.`, 'not_found', resultBox);
             }
         } catch (error) {
-            // console.error('[Ban Checker] Ошибка при получении информации:', error);
-            showResult(`Ошибка: ${error.message}`, 'error', resultBox);
+            console.error('[Ban Checker Extension] Error fetching player info:', error);
+            // Показываем пользователю более дружелюбное сообщение
+            if (error.message && error.message.includes('HTTP')) {
+                showResult(`Ошибка API: ${error.message}`, 'error', resultBox);
+            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                 showResult('Ошибка сети. Проверьте соединение.', 'error', resultBox);
+            } else {
+                 showResult(`Ошибка: ${error.message || 'Неизвестная ошибка'}`, 'error', resultBox);
+            }
         }
     }
 
@@ -333,10 +364,8 @@
     // Создание UI
     // -------------------
     function createBanCheckerUI() {
-        // console.log('[Ban Checker] Creating UI...');
         const playerNameInput = document.querySelector('#playerNameInput');
         if (!playerNameInput) {
-            // console.error('[Ban Checker] Player name input not found.');
             return;
         }
 
@@ -352,6 +381,7 @@
         button.id = 'ban-check-btn-v41';
         button.textContent = '🚫';
         button.type = 'button';
+        // Если Bootstrap классы доступны на странице, они могут помочь со стилями
         button.className = 'btn btn-danger';
 
         const resultBox = document.createElement('div');
@@ -361,31 +391,38 @@
         container.appendChild(button);
         container.appendChild(resultBox);
 
+        // Вставляем контейнер ПОСЛЕ поля ввода имени игрока
         playerNameInput.parentNode.insertBefore(container, playerNameInput.nextSibling);
 
+        // Назначаем обработчик события
         button.addEventListener('click', handleInfoButtonClick);
-
-        // console.log('[Ban Checker] UI created successfully.');
     }
 
     // -------------------
     // Инициализация
     // -------------------
-    const interval = setInterval(() => {
+    
+    // Пробуем создать UI сразу, если DOM уже готов
+    if (document.readyState === 'loading') {
+        // DOM еще не готов, ждем
+        document.addEventListener('DOMContentLoaded', createBanCheckerUI);
+    } else {
+        // DOM уже готов
+        createBanCheckerUI();
+    }
+
+    // На случай, если элементы подгружаются динамически
+    // Можно использовать MutationObserver или просто таймер
+    const initInterval = setInterval(() => {
         if (document.querySelector('#playerNameInput')) {
-            clearInterval(interval);
-            // console.log('[Ban Checker] Input field found, initializing UI...');
-            setTimeout(createBanCheckerUI, 100);
-        } else {
-            // console.log('[Ban Checker] Waiting for input field...');
+            createBanCheckerUI();
+            clearInterval(initInterval);
         }
     }, 1000);
 
+    // Останавливаем попытки через 10 секунд
     setTimeout(() => {
-        if (!document.querySelector('#ban-check-container-v41')) {
-            // console.warn('[Ban Checker] Timeout: UI was not created within 15 seconds.');
-            clearInterval(interval);
-        }
-    }, 15000);
+        clearInterval(initInterval);
+    }, 10000);
 
 })();
