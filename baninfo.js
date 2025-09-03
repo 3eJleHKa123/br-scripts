@@ -80,7 +80,7 @@
             font-weight: bold;
             margin-bottom: 4px;
         }
-        .ban-info-not-found-v41, .ban-info-success-v41 {
+        .ban-info-not-found-v41, .ban-info-unbanned-v41 {
             color: green;
             font-weight: bold;
         }
@@ -101,23 +101,22 @@
 
     function showResult(message, type = 'info', resultBoxElement) {
         if (!resultBoxElement) return;
-        resultBoxElement.textContent = '';
-        resultBoxElement.className = '';
+        resultBoxElement.innerHTML = '';
+        resultBoxElement.className = 'ban-info-result-v41';
+
+        const content = document.createElement('div');
+        content.innerHTML = message;
+
         if (type === 'loading') {
             resultBoxElement.classList.add('ban-info-loading-v41');
-            resultBoxElement.textContent = message;
         } else if (type === 'error') {
             resultBoxElement.classList.add('ban-info-error-v41');
-            resultBoxElement.textContent = message;
         } else if (type === 'not_found') {
             resultBoxElement.classList.add('ban-info-not-found-v41');
-            resultBoxElement.innerHTML = message;
         } else if (type === 'success') {
-            resultBoxElement.classList.add('ban-info-success-v41');
-            resultBoxElement.innerHTML = message;
-        } else {
-            resultBoxElement.textContent = message;
+             // The specific class (banned/unbanned) will be in the HTML content itself
         }
+        resultBoxElement.appendChild(content);
     }
 
     function formatDate(dateString) {
@@ -126,7 +125,7 @@
         return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }
 
-    function parseBanInfo(transactionDesc, playerName) {
+    function parseBanInfo(transactionDesc) {
         let duration = "Неизвестно";
         let reason = "Не указана";
 
@@ -171,33 +170,27 @@
         try {
             const response = await fetch(url, {
                 method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                },
+                headers: { 'Accept': 'application/json' },
             });
 
             if (!response.ok) {
-                if (response.status === 429) {
-                    throw new Error('TOO_MANY_REQUESTS');
-                }
+                if (response.status === 429) throw new Error('TOO_MANY_REQUESTS');
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-
-            const data = await response.json();
-            return data;
+            return await response.json();
         } catch (error) {
             throw error;
         }
     }
 
-    async function getPlayerBlocks(playerName, resultBoxElement) {
+    async function getPlayerLogs(playerName, resultBoxElement) {
         await throttle();
         lastRequestTime = Date.now();
 
         const endDate = new Date();
         const startDate = daysAgo(PERIOD_DAYS);
-
-        const descFilterRaw = `%заблокировал% %${playerName}%`;
+        // --- ИЗМЕНЕНИЕ 1: Ищем "блокировал", а не "заблокировал" ---
+        const descFilterRaw = `%блокировал% %${playerName}%`;
 
         const params = new URLSearchParams({
             category_id__exact: '',
@@ -215,37 +208,26 @@
             auto: 'false'
         });
 
-        let paramsString = params.toString();
-        paramsString = paramsString.replace(/time__gte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
-        paramsString = paramsString.replace(/time__lte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
+        let paramsString = params.toString().replace(/time__gte=[^&]*?%3A/g, match => match.replace(/%3A/g, ':')).replace(/time__lte=[^&]*?%3A/g, match => match.replace(/%3A/g, ':'));
 
         const pathParts = location.pathname.split('/').filter(p => p);
         const gslogsIndex = pathParts.indexOf('gslogs');
         const serverId = (gslogsIndex !== -1 && pathParts[gslogsIndex + 1] && !isNaN(pathParts[gslogsIndex + 1])) ? pathParts[gslogsIndex + 1] : null;
 
-        if (!serverId) {
-            throw new Error('Не удалось определить ID сервера из URL');
-        }
+        if (!serverId) throw new Error('Не удалось определить ID сервера из URL');
+
         const API_BASE_URL = `${location.origin}/gslogs/${serverId}/api/list-game-logs/`;
         const url = `${API_BASE_URL}?${paramsString}`;
 
         try {
             const data = await makeApiRequest(url);
-            
-            let logsArray;
-            if (Array.isArray(data)) {
-                logsArray = data;
-            } else if (data && typeof data === 'object' && Array.isArray(data.results)) {
-                logsArray = data.results;
-            } else {
-                logsArray = Array.isArray(data) ? data : (data ? [data] : []);
-            }
+            let logsArray = Array.isArray(data) ? data : (data && Array.isArray(data.results)) ? data.results : [];
             return logsArray;
         } catch (error) {
             if (error.message === 'TOO_MANY_REQUESTS') {
                 showResult('Слишком частые запросы. Повтор через 5 секунд...', 'loading', resultBoxElement);
                 await wait(5000);
-                return await getPlayerBlocks(playerName, resultBoxElement);
+                return getPlayerLogs(playerName, resultBoxElement);
             }
             throw error;
         }
@@ -256,13 +238,7 @@
         event.stopPropagation();
 
         const playerNameInput = document.querySelector('#playerNameInput');
-        let playerName = playerNameInput ? playerNameInput.value.trim() : '';
-
-        if (!playerName) {
-            const urlParams = new URLSearchParams(window.location.search);
-            playerName = urlParams.get('pname') || '';
-            playerName = playerName.trim();
-        }
+        let playerName = (playerNameInput ? playerNameInput.value.trim() : '') || new URLSearchParams(window.location.search).get('pname')?.trim() || '';
 
         const resultBox = document.getElementById('ban-check-result-v41');
         if (!playerName) {
@@ -273,62 +249,60 @@
         showResult('Загрузка информации...', 'loading', resultBox);
 
         try {
-            const logs = await getPlayerBlocks(playerName, resultBox);
+            const logs = await getPlayerLogs(playerName, resultBox);
 
             if (logs && logs.length > 0) {
                 const sortedLogs = logs.sort((a, b) => new Date(b.time) - new Date(a.time));
-                const lastBlockLog = sortedLogs[0];
+                const lastLog = sortedLogs[0];
 
-                if (lastBlockLog && lastBlockLog.transaction_desc) {
-                    const adminNick = lastBlockLog.player_name || "Неизвестен";
-                    const blockInfo = parseBanInfo(lastBlockLog.transaction_desc, playerName);
-                    const formattedTime = formatDate(lastBlockLog.time);
+                if (lastLog && lastLog.transaction_desc) {
+                    const adminNick = lastLog.player_name || "Неизвестен";
+                    const formattedTime = formatDate(lastLog.time);
+                    const description = lastLog.transaction_desc;
 
-                    const html = `
-                        <div class="ban-info-banned-v41">🛑 Последняя блокировка ${playerName}</div>
-                        <div><b>Срок:</b> ${blockInfo.duration}</div>
-                        <div><b>Причина:</b> ${blockInfo.reason}</div>
-                        <div><b>Админ:</b> ${adminNick}</div>
-                        <div><b>Время:</b> ${formattedTime}</div>
-                    `;
-                    showResult(html, 'success', resultBox);
+                    // --- ИЗМЕНЕНИЕ 2: Проверяем, был ли игрок разблокирован в последней записи ---
+                    if (description.toLowerCase().includes('разблокировал')) {
+                        const reasonMatch = description.match(/Причина:\s*(.*)/i);
+                        const reason = reasonMatch ? reasonMatch[1].trim().replace(/by\s.*$/, '').trim() : "Не указана";
+                        const html = `
+                            <div class="ban-info-unbanned-v41">✅ Игрок ${playerName} не в бане.</div>
+                            <div><b>Последнее действие:</b> Разблокировка</div>
+                            <div><b>Причина:</b> ${reason}</div>
+                            <div><b>Админ:</b> ${adminNick}</div>
+                            <div><b>Время:</b> ${formattedTime}</div>
+                        `;
+                        showResult(html, 'success', resultBox);
+                    } else { // Иначе это блокировка
+                        const blockInfo = parseBanInfo(description);
+                        const html = `
+                            <div class="ban-info-banned-v41">🛑 Игрок ${playerName} в бане.</div>
+                            <div><b>Срок:</b> ${blockInfo.duration}</div>
+                            <div><b>Причина:</b> ${blockInfo.reason}</div>
+                            <div><b>Админ:</b> ${adminNick}</div>
+                            <div><b>Время:</b> ${formattedTime}</div>
+                        `;
+                        showResult(html, 'success', resultBox);
+                    }
                 } else {
-                    showResult(`Ошибка обработки данных последней блокировки для "${playerName}".`, 'error', resultBox);
+                    showResult(`Ошибка обработки данных для "${playerName}".`, 'error', resultBox);
                 }
             } else {
-                showResult(`Блокировки для <b>"${playerName}"</b> не найдены.`, 'not_found', resultBox);
+                showResult(`Действия блокировки/разблокировки для <b>"${playerName}"</b> не найдены.`, 'not_found', resultBox);
             }
         } catch (error) {
-            if (error.message && error.message.includes('HTTP')) {
-                showResult(`Ошибка API: ${error.message}`, 'error', resultBox);
-            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                 showResult('Ошибка сети. Проверьте соединение.', 'error', resultBox);
-            } else {
-                 showResult(`Ошибка: ${error.message || 'Неизвестная ошибка'}`, 'error', resultBox);
-            }
+            showResult(`Ошибка: ${error.message || 'Неизвестная ошибка'}`, 'error', resultBox);
         }
     }
 
     function createBanCheckerUI() {
-        if (!window.location.href.startsWith('https://logs.blackrussia.online/gslogs/')) {
-            return;
-        }
-
-        const playerNameInput = document.querySelector('#playerNameInput');
-        if (!playerNameInput) {
-            return;
-        }
-
-        if (document.getElementById('ban-check-container-v41')) {
-            return;
-        }
+        if (!window.location.href.startsWith('https://logs.blackrussia.online/gslogs/')) return;
+        if (!document.querySelector('#playerNameInput') || document.getElementById('ban-check-container-v41')) return;
 
         if (!document.getElementById('ban-check-styles-v41')) {
             addStyle(styles);
             const styleMarker = document.createElement('style');
             styleMarker.id = 'ban-check-styles-v41';
-            styleMarker.textContent = '/* Ban Checker Styles Loaded */';
-            (document.head || document.getElementsByTagName('head')[0]).appendChild(styleMarker);
+            document.head.appendChild(styleMarker);
         }
 
         const container = document.createElement('div');
@@ -344,38 +318,27 @@
         resultBox.id = 'ban-check-result-v41';
         resultBox.textContent = 'Введите имя игрока и нажмите кнопку.';
 
-        container.appendChild(button);
-        container.appendChild(resultBox);
+        container.append(button, resultBox);
 
+        const playerNameInput = document.querySelector('#playerNameInput');
         playerNameInput.parentNode.insertBefore(container, playerNameInput.nextSibling);
 
         button.addEventListener('click', handleInfoButtonClick);
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', createBanCheckerUI);
-    } else {
+    function init() {
         createBanCheckerUI();
-    }
-
-    const observer = new MutationObserver(mutations => {
-        mutations.forEach(mutation => {
-            if (mutation.type === 'childList') {
-
-                if (document.querySelector('#playerNameInput') && !document.querySelector('#ban-check-container-v41')) {
-                    setTimeout(createBanCheckerUI, 100);
-                }
+        const observer = new MutationObserver(() => {
+            if (document.querySelector('#playerNameInput') && !document.getElementById('ban-check-container-v41')) {
+                createBanCheckerUI();
             }
         });
-    });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-
-    window.addEventListener('beforeunload', () => {
-        observer.disconnect();
-    });
-
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
