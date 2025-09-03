@@ -1,15 +1,10 @@
-// baninfo.js (https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/baninfo.js)
-// Версия без логов
-
 (function () {
     'use strict';
 
-    // --- Настройки ---
     const PERIOD_DAYS = 179;
     const REQUEST_DELAY_MS = 1200;
     let lastRequestTime = 0;
 
-    // --- Стили ---
     const styles = `
         #log-filter-section {
             width: 320px !important;
@@ -97,7 +92,6 @@
         }
     `;
 
-    // --- Функции-утилиты ---
     function addStyle(css) {
         const style = document.createElement('style');
         style.type = 'text/css';
@@ -173,7 +167,6 @@
         }
     }
 
-    // --- Логика API ---
     async function makeApiRequest(url) {
         try {
             const response = await fetch(url, {
@@ -181,7 +174,6 @@
                 headers: {
                     'Accept': 'application/json',
                 },
-                // credentials: 'include' // Может понадобиться
             });
 
             if (!response.ok) {
@@ -227,7 +219,6 @@
         paramsString = paramsString.replace(/time__gte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
         paramsString = paramsString.replace(/time__lte=[^&]*?%3A/g, (match) => match.replace(/%3A/g, ':'));
 
-        // Определяем SERVER_ID из URL
         const pathParts = location.pathname.split('/').filter(p => p);
         const gslogsIndex = pathParts.indexOf('gslogs');
         const serverId = (gslogsIndex !== -1 && pathParts[gslogsIndex + 1] && !isNaN(pathParts[gslogsIndex + 1])) ? pathParts[gslogsIndex + 1] : null;
@@ -260,7 +251,6 @@
         }
     }
 
-    // --- Основная логика ---
     async function handleInfoButtonClick(event) {
         event.preventDefault();
         event.stopPropagation();
@@ -320,22 +310,19 @@
     }
 
     function createBanCheckerUI() {
-        // Проверяем, на правильной ли странице мы находимся
         if (!window.location.href.startsWith('https://logs.blackrussia.online/gslogs/')) {
             return;
         }
 
         const playerNameInput = document.querySelector('#playerNameInput');
         if (!playerNameInput) {
-            return; // Элемент еще не загрузился
+            return;
         }
 
-        // Проверяем, не создана ли кнопка уже
         if (document.getElementById('ban-check-container-v41')) {
             return;
         }
 
-        // Добавляем стили один раз
         if (!document.getElementById('ban-check-styles-v41')) {
             addStyle(styles);
             const styleMarker = document.createElement('style');
@@ -351,7 +338,6 @@
         button.id = 'ban-check-btn-v41';
         button.textContent = '🚫';
         button.type = 'button';
-        // Пробуем применить стили Bootstrap, если они есть
         button.className = 'btn btn-danger';
 
         const resultBox = document.createElement('div');
@@ -366,34 +352,28 @@
         button.addEventListener('click', handleInfoButtonClick);
     }
 
-    // --- Инициализация (как в br-trade-viewer.js) ---
-    
-    // Пробуем создать UI сразу
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createBanCheckerUI);
     } else {
         createBanCheckerUI();
     }
 
-    // Наблюдаем за изменениями в DOM для динамически подгружаемых элементов
     const observer = new MutationObserver(mutations => {
         mutations.forEach(mutation => {
             if (mutation.type === 'childList') {
-                // Проверяем, появились ли нужные элементы
+
                 if (document.querySelector('#playerNameInput') && !document.querySelector('#ban-check-container-v41')) {
-                    setTimeout(createBanCheckerUI, 100); // Небольшая задержка для уверенности
+                    setTimeout(createBanCheckerUI, 100);
                 }
             }
         });
     });
 
-    // Начинаем наблюдение
     observer.observe(document.body, {
         childList: true,
         subtree: true
     });
 
-    // Останавливаем наблюдение при выгрузке страницы
     window.addEventListener('beforeunload', () => {
         observer.disconnect();
     });
