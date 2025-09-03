@@ -11,7 +11,7 @@
       "id": "set-tstart",
       "name": "Set 6-Months Start Date",
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
-      "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/set-tstart.js",
+      "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/baninfo.js",
       "enabledDefault": true
     }
   ]
