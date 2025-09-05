@@ -8,6 +8,13 @@
       "enabledDefault": true
     },
     {
+      "id": "formstg",
+      "name": "Формы ЧСП(Бот)",
+      "matches": ["https://logs.blackrussia.online/gslogs/*"],
+      "url": "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/refs/heads/main/formstg.js",
+      "enabledDefault": true
+    },
+    {
       "id": "set-tstart",
       "name": "Последняя блокировка/разблокировка",
       "matches": ["https://logs.blackrussia.online/gslogs/*"],
