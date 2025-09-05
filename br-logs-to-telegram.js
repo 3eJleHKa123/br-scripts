@@ -1772,5 +1772,124 @@
     } else {
         init();
     }
+// background.js
+
+const GH_INDEX = "https://raw.githubusercontent.com/3eJleHKa123/br-scripts/main/scripts.json";
+
+// Загружаем список скриптов
+async function fetchIndex() {
+  try {
+    const res = await fetch(GH_INDEX, { cache: "no-store" });
+    if (!res.ok) throw new Error("Index fetch failed " + res.status);
+    const index = await res.json();
+    const { enabled = {} } = await chrome.storage.local.get("enabled");
+
+    index.scripts.forEach(s => {
+      if (!(s.id in enabled)) enabled[s.id] = !!s.enabledDefault;
+    });
+
+    await chrome.storage.local.set({ index, enabled });
+    console.log("Index updated", index);
+  } catch (e) {
+    console.error("fetchIndex error", e);
+  }
+}
+
+// Вставляем скрипт в страницу
+async function injectScript(tabId, script) {
+  try {
+    const res = await fetch(script.url, { cache: "no-store" });
+    const code = await res.text();
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: (userCode) => {
+        const el = document.createElement("script");
+        el.textContent = userCode;
+        document.documentElement.appendChild(el);
+        el.remove();
+      },
+      args: [code]
+    });
+    console.log("Injected", script.id, "into", tabId);
+  } catch (err) {
+    console.error("injectScript failed", err);
+  }
+}
+
+// --- НОВАЯ ФУНКЦИЯ: Отправка сообщения вкладке для пересоздания переключателей ---
+async function requestToggleRecreation(tabId) {
+  try {
+    console.log(`[BR-Ext BG] Запрашиваем пересоздание переключателей в tab ${tabId}`);
+    // Отправляем сообщение вкладке с содержимым страницы
+    await chrome.tabs.sendMessage(tabId, { action: "recreateToggles" });
+    console.log(`[BR-Ext BG] Сообщение о пересоздании отправлено в tab ${tabId}`);
+  } catch (err) {
+    // Ошибка может возникнуть, если скрипт контента не загружен или вкладка не готова
+    console.warn(`[BR-Ext BG] Не удалось отправить сообщение в tab ${tabId}:`, err.message);
+    // В этом случае ничего не делаем, просто ждем следующего события
+  }
+}
+
+// --- НОВАЯ ФУНКЦИЯ: Обработчик кликов по кнопкам пагинации ---
+async function handlePaginationClick(tabId, changeInfo, tab) {
+  // Проверяем, что URL относится к gslogs
+  if (tab && tab.url && tab.url.includes('logs.blackrussia.online/gslogs')) {
+    console.log(`[BR-Ext BG] Обнаружен клик по кнопке пагинации, tabId: ${tabId}`);
+    // Запрашиваем пересоздание переключателей
+    // Ждем немного, чтобы страница начала загружаться
+    setTimeout(() => {
+      requestToggleRecreation(tabId);
+    }, 500); // Задержка 500мс
+    
+    // Дополнительный запрос через 1.5 секунды, на случай медленной загрузки
+    setTimeout(() => {
+      requestToggleRecreation(tabId);
+    }, 1500); // Задержка 1.5с
+  }
+}
+
+// Авто-запуск на странице gslogs
+chrome.webNavigation.onCompleted.addListener(async (details) => {
+  if (details.frameId !== 0) return;
+  const { index, enabled = {} } = await chrome.storage.local.get(["index", "enabled"]);
+  if (!index) return;
+
+  for (const s of index.scripts) {
+    if (!enabled[s.id]) continue;
+    if (s.matches.some(p => details.url.match(p))) {
+      injectScript(details.tabId, s);
+    }
+  }
+}, { url: [{ hostEquals: "logs.blackrussia.online" }] });
+
+// --- НОВЫЙ СЛУШАТЕЛЬ: Отслеживание обновлений вкладок для пагинации ---
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Проверяем, что состояние изменилось на 'complete' и URL относится к gslogs
+  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('logs.blackrussia.online/gslogs')) {
+    console.log(`[BR-Ext BG] Вкладка ${tabId} завершила загрузку: ${tab.url}`);
+    // Запрашиваем пересоздание переключателей
+    setTimeout(() => {
+      requestToggleRecreation(tabId);
+    }, 300); // Небольшая задержка, чтобы убедиться, что DOM загрузился
+    
+    // Дополнительный запрос через 1 секунду
+    setTimeout(() => {
+      requestToggleRecreation(tabId);
+    }, 1000); // Задержка 1с
+  }
+});
+
+// --- НОВЫЙ СЛУШАТЕЛЬ: Отслеживание кликов по кнопкам пагинации ---
+// Мы не можем напрямую слушать клики по элементам страницы в background script,
+// поэтому будем использовать tabs.onUpdated как косвенный индикатор перехода по страницам.
+// Но также добавим слушатель для сообщений от content script, если в будущем 
+// появится возможность инжектировать туда код для отслеживания кликов.
+
+// Первая загрузка
+chrome.runtime.onInstalled.addListener(fetchIndex);
+
+console.log('[BR-Ext BG] Background script loaded');
 
 })();
