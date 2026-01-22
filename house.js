@@ -272,3 +272,4 @@ export const allHouses = [
     { id: 9256, location: "Нижегородск", type: "Деревенский домик", price: "300 000", garage: "Не имеется" },
     { id: 9257, location: "Нижегородск", type: "Деревенский домик", price: "300 000", garage: "Не имеется" }
 ];
+
